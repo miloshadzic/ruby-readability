@@ -23,7 +23,6 @@ Example
 -------
 
 ```ruby
-require 'rubygems'
 require 'readability'
 require 'open-uri'
 
