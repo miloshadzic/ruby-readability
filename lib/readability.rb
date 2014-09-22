@@ -2,6 +2,7 @@
 
 require 'rubygems'
 require 'nokogiri'
+require 'fastimage'
 require 'guess_html_encoding'
 require_relative 'readability/author'
 
@@ -97,12 +98,6 @@ module Readability
     end
 
     def images(content=nil, reload=false)
-      begin
-        require 'fastimage'
-      rescue LoadError
-        raise "Please install fastimage in order to use the #images feature."
-      end
-
       @best_candidate_has_image = false if reload
 
       prepare_candidates
