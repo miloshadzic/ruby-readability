@@ -5,6 +5,7 @@ require 'nokogiri'
 require 'fastimage'
 require 'guess_html_encoding'
 require_relative 'readability/author'
+require_relative 'readability/errors'
 require_relative 'readability/image'
 
 module Readability
@@ -98,27 +99,30 @@ module Readability
       @html.xpath('//comment()').each { |i| i.remove }
     end
 
-    def images(content=nil, reload=false)
+    def images
+      @images ||= get_images
+    end
+
+    def get_images(content=nil, reload=false)
       @best_candidate_has_image = false if reload
 
       prepare_candidates
-      list_images   = []
-      tested_images = []
       content       = @best_candidate[:elem] unless reload
 
-      return list_images if content.nil?
+      return [] if content.nil?
+
       elements = content.css("img").map(&:attributes)
 
-      elements.each do |element|
-        next unless element["src"]
-
+      list = elements.reject { |e| e['src'].nil? || e['src'] == "" }.map do |element|
         url     = element["src"].value
         height  = element["height"].nil?  ? 0 : element["height"].value.to_i
         width   = element["width"].nil?   ? 0 : element["width"].value.to_i
 
         if url =~ /\Ahttps?:\/\//i && (height.zero? || width.zero?)
-          width, height   = get_image_size(url)
-          next unless (width && height)
+          begin
+            width, height = get_image_size(url)
+          rescue Errors::UnknownImageSize
+          end
         end
 
         image = Image.new(url,
@@ -126,59 +130,22 @@ module Readability
                           width,
                           height)
 
-        if tested_images.include?(url)
-          debug("Image was tested: #{url}")
-          next
-        end
+      end.select { |image| image_meets_criteria?(image) }.uniq.map(&:url)
 
-        tested_images.push(url)
-        if image_meets_criteria?(image)
-          list_images << url
-        else
-          debug("Image discarded: #{url} - height: #{image[:height]} - width: #{image[:width]} - format: #{image[:format]}")
-        end
-      end
-
-      (list_images.empty? and content != @html) ? images(@html, true) : list_images
-    end
-    
-    def images_with_fqdn_uris!(source_uri)
-      images_with_fqdn_uris(@html, source_uri)
-    end
-    
-    def images_with_fqdn_uris(document = @html.dup, source_uri)
-      uri = URI.parse(source_uri)
-      host = uri.host
-      scheme = uri.scheme
-      port = uri.port # defaults to 80
-
-      base = "#{scheme}://#{host}:#{port}/"
-
-      images = []
-      document.css("img").each do |elem|
-        begin
-          elem['src'] = URI.join(base,elem['src']).to_s if URI.parse(elem['src']).host == nil 
-          images << elem['src'].to_s
-        rescue URI::InvalidURIError => exc
-          elem.remove
-        end
-      end
-
-      images(document,true)
+      (list.empty? && content != @html) ? get_images(@html, true) : list
     end
 
     def get_image_size(url)
       w, h = FastImage.size(url)
-      raise "Couldn't get size." if w.nil? || h.nil?
+      raise Errors::UnknownImageSize if w.nil? || h.nil?
       [w, h]
-    rescue => e
-      debug("Image error: #{e}")
-      nil
     end
 
     def image_meets_criteria?(image)
       return false if options[:ignore_image_format].include?(image.format)
-      image.width >= (options[:min_image_width] || 0) && image.height >= (options[:min_image_height] || 0)
+
+      image.width >= (options.fetch(:min_image_width, 0)) &&
+        image.height >= (options.fetch(:min_image_height, 0))
     end
 
     # Title of the parsed document. Empty string if there's no
@@ -189,7 +156,7 @@ module Readability
     end
 
     # Look through the @html document looking for the author
-    # Precedence Information here on the wiki: (TODO attach wiki URL if it is accepted)
+    #
     # Returns nil if no author is detected
     def author
       @author ||= Author.parse(@html)
