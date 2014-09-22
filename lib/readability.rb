@@ -183,9 +183,11 @@ module Readability
       image[:width] >= (options[:min_image_width] || 0) && image[:height] >= (options[:min_image_height] || 0)
     end
 
+    # Title of the parsed document. Empty string if there's no
+    #
+    # @return [String]
     def title
-      title = @html.css("title").first
-      title ? title.text : nil
+      @title ||= @html.xpath('//title').text
     end
 
     # Look through the @html document looking for the author

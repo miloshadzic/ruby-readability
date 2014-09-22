@@ -19,7 +19,7 @@ describe Readability do
         </body>
       </html>
     HTML
-    
+
     @simple_html_with_img_no_text = <<-HTML
     <html>
       <head>
@@ -378,7 +378,7 @@ describe Readability do
 
       doc = Readability::Document.new("<html><head></head><body><div><p>Some content</p></div></body>",
                                        :min_text_length => 0, :retry_length => 1)
-      doc.title.should be_nil
+      doc.title.should eq ""
     end
   end
 
