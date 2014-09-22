@@ -5,6 +5,7 @@ require 'nokogiri'
 require 'fastimage'
 require 'guess_html_encoding'
 require_relative 'readability/author'
+require_relative 'readability/image'
 
 module Readability
   class Document
@@ -108,34 +109,35 @@ module Readability
       return list_images if content.nil?
       elements = content.css("img").map(&:attributes)
 
-        elements.each do |element|
-          next unless element["src"]
+      elements.each do |element|
+        next unless element["src"]
 
-          url     = element["src"].value
-          height  = element["height"].nil?  ? 0 : element["height"].value.to_i
-          width   = element["width"].nil?   ? 0 : element["width"].value.to_i
+        url     = element["src"].value
+        height  = element["height"].nil?  ? 0 : element["height"].value.to_i
+        width   = element["width"].nil?   ? 0 : element["width"].value.to_i
 
-          if url =~ /\Ahttps?:\/\//i && (height.zero? || width.zero?)
-            image   = get_image_size(url)
-            next unless image
-          else
-            image = {:width => width, :height => height}
-          end
-
-          image[:format] = File.extname(url).gsub(".", "")
-
-          if tested_images.include?(url)
-            debug("Image was tested: #{url}")
-            next
-          end
-
-          tested_images.push(url)
-          if image_meets_criteria?(image)
-            list_images << url
-          else
-            debug("Image discarded: #{url} - height: #{image[:height]} - width: #{image[:width]} - format: #{image[:format]}")
-          end
+        if url =~ /\Ahttps?:\/\//i && (height.zero? || width.zero?)
+          width, height   = get_image_size(url)
+          next unless (width && height)
         end
+
+        image = Image.new(url,
+                          File.extname(url).gsub(".", "").downcase,
+                          width,
+                          height)
+
+        if tested_images.include?(url)
+          debug("Image was tested: #{url}")
+          next
+        end
+
+        tested_images.push(url)
+        if image_meets_criteria?(image)
+          list_images << url
+        else
+          debug("Image discarded: #{url} - height: #{image[:height]} - width: #{image[:width]} - format: #{image[:format]}")
+        end
+      end
 
       (list_images.empty? and content != @html) ? images(@html, true) : list_images
     end
@@ -168,15 +170,15 @@ module Readability
     def get_image_size(url)
       w, h = FastImage.size(url)
       raise "Couldn't get size." if w.nil? || h.nil?
-      {:width => w, :height => h}
+      [w, h]
     rescue => e
       debug("Image error: #{e}")
       nil
     end
 
     def image_meets_criteria?(image)
-      return false if options[:ignore_image_format].include?(image[:format].downcase)
-      image[:width] >= (options[:min_image_width] || 0) && image[:height] >= (options[:min_image_height] || 0)
+      return false if options[:ignore_image_format].include?(image.format)
+      image.width >= (options[:min_image_width] || 0) && image.height >= (options[:min_image_height] || 0)
     end
 
     # Title of the parsed document. Empty string if there's no
