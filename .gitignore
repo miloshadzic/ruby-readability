@@ -8,3 +8,5 @@ pkg/*
 .ruby-gemset
 .ruby-version
 .yardoc/
+/bin
+/vendor
