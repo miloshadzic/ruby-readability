@@ -414,8 +414,8 @@ module Readability
         end
       end
 
-      # Conditionally clean <table>s, <ul>s, and <div>s
-      clean_conditionally(node, candidates, "table, ul, div")
+      # Conditionally clean <div>s
+      clean_conditionally(node, candidates, "div")
 
       # We'll sanitize all elements using a whitelist
       base_whitelist = @options[:tags] || %w[div p]
