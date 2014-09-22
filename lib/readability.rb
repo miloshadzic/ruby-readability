@@ -339,20 +339,16 @@ module Readability
     end
 
     def class_weight(e)
-      weight = 0
-      return weight unless @weight_classes
+      return 0 unless @weight_classes
 
-      if e[:class] && e[:class] != ""
-        weight -= 25 if e[:class] =~ REGEXES[:negativeRe]
-        weight += 25 if e[:class] =~ REGEXES[:positiveRe]
+      [:class, :id].inject(0) do |weight, attr|
+        unless e[attr].nil? && e[attr] == ""
+          weight -= 25 if e[attr] =~ REGEXES[:negativeRe]
+          weight += 25 if e[attr] =~ REGEXES[:positiveRe]
+        end
+
+        weight
       end
-
-      if e[:id] && e[:id] != ""
-        weight -= 25 if e[:id] =~ REGEXES[:negativeRe]
-        weight += 25 if e[:id] =~ REGEXES[:positiveRe]
-      end
-
-      weight
     end
 
     ELEMENT_SCORES = {
