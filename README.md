@@ -1,6 +1,6 @@
 Ruby Readability
 ================
-[![Build Status](https://travis-ci.org/miloshadzic/ruby-readability.png)](https://travis-ci.org/miloshadzic/ruby-readability) [![Code Climate](https://codeclimate.com/github/miloshadzic/ruby-readability/badges/gpa.svg)](https://codeclimate.com/github/miloshadzic/ruby-readability)
+[![Build Status](https://travis-ci.org/miloshadzic/ruby-readability.svg)](https://travis-ci.org/miloshadzic/ruby-readability) [![Code Climate](https://codeclimate.com/github/miloshadzic/ruby-readability/badges/gpa.svg)](https://codeclimate.com/github/miloshadzic/ruby-readability)
 
 Ruby Readability is a tool for extracting the primary readable content of a
 webpage. It is a Ruby port of arc90's readability project.
