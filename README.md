@@ -14,19 +14,22 @@ Command line:
 
 Bundler:
 
-    gem "ruby-readability", :require => 'readability'
+```ruby
+gem "ruby-readability", :require => 'readability'
+```
 
 
 Example
 -------
 
-    require 'rubygems'
-    require 'readability'
-    require 'open-uri'
+```ruby
+require 'rubygems'
+require 'readability'
+require 'open-uri'
 
-    source = open('http://lab.arc90.com/experiments/readability/').read
-    puts Readability::Document.new(source).content
-
+source = open('http://lab.arc90.com/experiments/readability/').read
+puts Readability::Document.new(source).content
+```
 
 Options
 -------
@@ -68,8 +71,10 @@ Images
 You can get a list of images in the content area with `Document#images`. This
 feature requires that the `fastimage` gem be installed.
 
-    rbody = Readability::Document.new(body, :tags => %w[div p img a], :attributes => %w[src href], :remove_empty_nodes => false)
-    rbody.images
+```ruby
+rbody = Readability::Document.new(body, :tags => %w[div p img a], :attributes => %w[src href], :remove_empty_nodes => false)
+rbody.images
+```
 
 Related Projects
 ----------------
