@@ -192,40 +192,63 @@ module Readability
     # Precedence Information here on the wiki: (TODO attach wiki URL if it is accepted)
     # Returns nil if no author is detected
     def author
-      # Let's grab this author:
-      # <meta name="dc.creator" content="Finch - http://www.getfinch.com" />
-      author_elements = @html.xpath('//meta[@name = "dc.creator"]')
-      unless author_elements.empty?
-        author_elements.each do |element|
-          return element['content'].strip if element['content']
+      @author ||= Author.parse(@html)
+    end
+
+    module Author
+      # Try to get author information from the passed in HTML
+      class MetaDCCreator
+        def self.parse(html)
+          # Let's grab this author:
+          # <meta name="dc.creator" content="Finch - http://www.getfinch.com" />
+          author_elements = html.xpath('//meta[@name = "dc.creator"]')
+          author_elements.each do |element|
+            return element['content'].strip if element['content']
+          end
+          nil
         end
       end
 
-      # Now let's try to grab this
-      # <span class="byline author vcard"><span>By</span><cite class="fn">Austin Fonacier</cite></span>
-      # <div class="author">By</div><div class="author vcard"><a class="url fn" href="http://austinlivesinyoapp.com/">Austin Fonacier</a></div>
-      author_elements = @html.xpath('//*[contains(@class, "vcard")]//*[contains(@class, "fn")]')
-      unless author_elements.empty?
-        author_elements.each do |element|
-          return element.text.strip if element.text
+      class VCard
+        def self.parse(html)
+          # Now let's try to grab this
+          # <span class="byline author vcard"><span>By</span><cite class="fn">Austin Fonacier</cite></span>
+          # <div class="author">By</div><div class="author vcard"><a class="url fn" href="http://austinlivesinyoapp.com/">Austin Fonacier</a></div>
+          author_elements = html.xpath('//*[contains(@class, "vcard")]//*[contains(@class, "fn")]')
+          author_elements.each do |element|
+            return element.text.strip if element.text
+          end
+          nil
         end
       end
 
-      # Now let's try to grab this
-      # <a rel="author" href="http://dbanksdesign.com">Danny Banks (rel)</a>
-      # TODO: strip out the (rel)?
-      author_elements = @html.xpath('//a[@rel = "author"]')
-      unless author_elements.empty?
-        author_elements.each do |element|
-          return element.text.strip if element.text
+      class Rel
+        def self.parse(html)
+          # Now let's try to grab this
+          # <a rel="author" href="http://dbanksdesign.com">Danny Banks (rel)</a>
+          # TODO: strip out the (rel)?
+          author_elements = html.xpath('//a[@rel = "author"]')
+          author_elements.each do |element|
+            return element.text.strip if element.text
+          end
+          nil
         end
       end
 
-      author_elements = @html.xpath('//*[@id = "author"]')
-      unless author_elements.empty?
-        author_elements.each do |element|
-          return element.text.strip if element.text
+      class Id
+        def self.parse(html)
+          author_elements = html.xpath('//*[@id = "author"]')
+          author_elements.each do |element|
+            return element.text.strip if element.text
+          end
+          nil
         end
+      end
+
+      def self.parse(html)
+        [MetaDCCreator, VCard, Rel, Id].map { |strategy| strategy.parse(html) }
+          .reject { |author_name| author_name.nil? || author_name == "" }
+          .first
       end
     end
 
