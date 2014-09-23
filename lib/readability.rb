@@ -62,14 +62,10 @@ module Readability
       @html = make_html
 
 
-      prepare_candidates
-    end
-
-    def prepare_candidates
       remove_unlikely_candidates! if @remove_unlikely_candidates
       transform_misused_divs_into_paragraphs!
 
-      @candidates     = score_paragraphs(options[:min_text_length])
+      @candidates     = score_paragraphs(@options[:min_text_length])
       @best_candidate = select_best_candidate(@candidates)
     end
 
