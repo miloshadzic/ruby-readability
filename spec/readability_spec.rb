@@ -46,6 +46,25 @@ describe Readability do
       </html>
     HTML
 
+    @simple_html_with_tables = <<-HTML
+    <html>
+      <body>
+        <h1>A simple header</h1>
+        <p>A simple body text</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Header</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Cell</td></tr>
+          </tbody>
+        </table>
+      </body>
+    </html>
+    HTML
+
     @simple_html_with_img_no_text = <<-HTML
     <html>
       <head>
@@ -394,6 +413,16 @@ describe Readability do
 
     it "should return the main page content" do
       expect(@doc.content).to match("Some content")
+    end
+
+    it "should leave tables in" do
+      @doc = Readability::Document.new(@simple_html_with_tables,
+                                       tags: %w[div p table tbody thead th td tr h1],
+                                       remove_unlikely_candidates: false)
+                                       
+      expect(@doc.content).to match('Cell')
+      expect(@doc.content).to match('table')
+      expect(@doc.content).to match('td')
     end
 
     it "should return the page title if present" do
