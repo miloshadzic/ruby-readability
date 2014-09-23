@@ -67,7 +67,7 @@ module Readability
       transform_misused_divs_into_paragraphs!
 
       @candidates     = score_paragraphs(@options[:min_text_length])
-      @best_candidate = select_best_candidate(@candidates)
+      @best_candidate = select_best_candidate
     end
 
     def exclude!(html)
@@ -170,7 +170,7 @@ module Readability
     #
     # @returns [String] the article content
     def content
-      @content ||= sanitize(get_article(@candidates, @best_candidate), @candidates)
+      @content ||= sanitize(get_article(@best_candidate))
     end
 
     # Now that we have the top candidate, look through its siblings
@@ -178,13 +178,13 @@ module Readability
     # content split by ads that we removed, etc.
     #
     # @returns [Article]
-    def get_article(candidates, best_candidate)
+    def get_article(best_candidate)
       sibling_score_threshold = [10, best_candidate.score * 0.2].max
       output = Nokogiri::XML::Node.new('div', @html)
       best_candidate.node.parent.children.each do |sibling|
         append = false
         append = true if sibling == best_candidate.node
-        append = true if candidates[sibling] && candidates[sibling].score >= sibling_score_threshold
+        append = true if @candidates[sibling] && @candidates[sibling].score >= sibling_score_threshold
 
         if sibling.name.downcase == "p"
           link_density = get_link_density(sibling)
@@ -210,8 +210,8 @@ module Readability
       Article.new(output)
     end
 
-    def select_best_candidate(candidates)
-      sorted_candidates = candidates.values.sort { |a, b| b.score <=> a.score }
+    def select_best_candidate
+      sorted_candidates = @candidates.values.sort { |a, b| b.score <=> a.score }
 
       debug("Top 5 candidates:")
       sorted_candidates[0...5].each do |candidate|
@@ -318,7 +318,7 @@ module Readability
       end
     end
 
-    def sanitize(article, candidates, options = {})
+    def sanitize(article, options = {})
       node = article.content
 
       node.css("h1, h2, h3, h4, h5, h6").each do |header|
@@ -337,7 +337,7 @@ module Readability
       end
 
       # Conditionally clean <table>s, <ul>s, and <div>s
-      clean_conditionally(node, candidates, "table, ul, div")
+      clean_conditionally(node, "table, ul, div")
 
       # We'll sanitize all elements using a whitelist
       base_whitelist = @options.fetch(:tags, %w[div p])
@@ -380,13 +380,14 @@ module Readability
       return html.gsub(/[\r\n\f]+/, "\n" )
     end
 
-    def clean_conditionally(node, candidates, selector)
+    def clean_conditionally(node, selector)
       return unless @clean_conditionally
       node.css(selector).each do |el|
         weight = class_weight(el)
-        content_score = candidates[el] ? candidates[el].score : 0
+
+        content_score = @candidates[el] ? @candidates[el].score : 0
         name = el.name.downcase
-        
+
         if weight + content_score < 0
           el.remove
           debug("Conditionally cleaned #{name}##{el[:id]}.#{el[:class]} with weight #{weight} and content score #{content_score} because score + content score was less than zero.")
@@ -396,7 +397,7 @@ module Readability
 
           # For every img under a noscript tag discount one from the count to avoid double counting
           counts["img"] -= el.css("noscript").css("img").length
-                
+
           content_length = el.text.strip.length  # Count the text length excluding any surrounding whitespace
           link_density = get_link_density(el)
 
