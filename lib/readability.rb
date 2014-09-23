@@ -5,6 +5,7 @@ require 'nokogiri'
 require 'fastimage'
 require 'guess_html_encoding'
 require_relative 'readability/author'
+require_relative 'readability/article'
 require_relative 'readability/errors'
 require_relative 'readability/image'
 require_relative 'readability/candidate'
@@ -165,16 +166,19 @@ module Readability
       @author ||= Author.parse(@html)
     end
 
+    # The cleaned up article content
+    #
+    # @returns [String] the article content
     def content
-      article = get_article(@candidates, @best_candidate) 
-
-      sanitize(article, @candidates, options)
+      @content ||= sanitize(get_article(@candidates, @best_candidate), @candidates)
     end
 
+    # Now that we have the top candidate, look through its siblings
+    # for content that might also be related. Things like preambles,
+    # content split by ads that we removed, etc.
+    #
+    # @returns [Article]
     def get_article(candidates, best_candidate)
-      # Now that we have the top candidate, look through its siblings for content that might also be related.
-      # Things like preambles, content split by ads that we removed, etc.
-
       sibling_score_threshold = [10, best_candidate.score * 0.2].max
       output = Nokogiri::XML::Node.new('div', @html)
       best_candidate.node.parent.children.each do |sibling|
@@ -195,13 +199,15 @@ module Readability
         end
 
         if append
-          sibling_dup = sibling.dup # otherwise the state of the document in processing will change, thus creating side effects
+          # otherwise the state of the document in processing will change,
+          # thus creating side effects
+          sibling_dup = sibling.dup
           sibling_dup.name = "div" unless %w[div p].include?(sibling.name.downcase)
           output << sibling_dup
         end
       end
 
-      output
+      Article.new(output)
     end
 
     def select_best_candidate(candidates)
@@ -294,6 +300,7 @@ module Readability
     def transform_misused_divs_into_paragraphs!
       @html.css("*").each do |elem|
         if elem.name.downcase == "div"
+
           # transform <div>s that do not contain other block elements into <p>s
           if elem.inner_html !~ REGEXES[:divToPElementsRe]
             debug("Altering div(##{elem[:id]}.#{elem[:class]}) to p");
@@ -311,7 +318,9 @@ module Readability
       end
     end
 
-    def sanitize(node, candidates, options = {})
+    def sanitize(article, candidates, options = {})
+      node = article.content
+
       node.css("h1, h2, h3, h4, h5, h6").each do |header|
         header.remove if class_weight(header) < 0 || get_link_density(header) > 0.33
       end
@@ -331,17 +340,15 @@ module Readability
       clean_conditionally(node, candidates, "table, ul, div")
 
       # We'll sanitize all elements using a whitelist
-      base_whitelist = @options[:tags] || %w[div p]
+      base_whitelist = @options.fetch(:tags, %w[div p])
       # We'll add whitespace instead of block elements,
       # so a<br>b will have a nice space between them
       base_replace_with_whitespace = %w[br hr h1 h2 h3 h4 h5 h6 dl dd ol li ul address blockquote center]
 
 
       # Use a hash for speed (don't want to make a million calls to include?)
-      whitelist = Hash.new
-      base_whitelist.each {|tag| whitelist[tag] = true }
-      replace_with_whitespace = Hash.new
-      base_replace_with_whitespace.each { |tag| replace_with_whitespace[tag] = true }
+      whitelist = base_whitelist.inject({}) { |hsh, tag| hsh[tag] = true; hsh }
+      replace_with_whitespace = base_replace_with_whitespace.inject({}) { |hsh, tag| hsh[tag] = true; hsh }
 
       ([node] + node.css("*")).each do |el|
         # If element is in whitelist, delete all its attributes
