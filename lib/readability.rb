@@ -7,6 +7,7 @@ require 'guess_html_encoding'
 require_relative 'readability/author'
 require_relative 'readability/errors'
 require_relative 'readability/image'
+require_relative 'readability/candidate'
 
 module Readability
   class Document
@@ -54,12 +55,17 @@ module Readability
       @weight_classes = @options[:weight_classes]
       @clean_conditionally = @options[:clean_conditionally]
       @best_candidate_has_image = true
-      make_html
-      handle_exclusions!(@options[:whitelist], @options[:blacklist])
+
+      @whitelist = options.fetch(:whitelist, nil)
+      @blacklist = options.fetch(:blacklist, nil)
+
+      @html = make_html
+
+
+      prepare_candidates
     end
 
     def prepare_candidates
-      @html.css("script, style").each { |i| i.remove }
       remove_unlikely_candidates! if @remove_unlikely_candidates
       transform_misused_divs_into_paragraphs!
 
@@ -67,36 +73,38 @@ module Readability
       @best_candidate = select_best_candidate(@candidates)
     end
 
-    def handle_exclusions!(whitelist, blacklist)
-      return unless whitelist || blacklist
+    def exclude!(html)
+      return unless @blacklist || @whitelist
 
-      if blacklist
-        elems = @html.css(blacklist)
-        if elems
-          elems.each do |e|
-            e.remove
-          end
-        end
+      if @blacklist
+        html.css(@blacklist).remove
       end
 
-      if whitelist
-        elems = @html.css(whitelist).to_s
+      if @whitelist
+        elems = html.css(@whitelist).to_s
 
-        if body = @html.at_css('body')
+        if body = html.at_css('body')
           body.inner_html = elems
         end
       end
 
-      @input = @html.to_s
+      @input = html.to_s
+      html
     end
 
-    def make_html(whitelist=nil, blacklist=nil)
-      @html = Nokogiri::HTML(@input, nil, @options[:encoding])
-      # In case document has no body, such as from empty string or redirect
-      @html = Nokogiri::HTML('<body />', nil, @options[:encoding]) if @html.css('body').length == 0
+    def make_html
+      html = Nokogiri::HTML(@input, nil, @options[:encoding])
 
-      # Remove html comment tags
-      @html.xpath('//comment()').each { |i| i.remove }
+      # In case document has no body, such as from empty string or redirect
+      if html.css('body').empty?
+        html = Nokogiri::HTML('<body />', nil, @options[:encoding])
+      else
+        html.xpath('//comment()').remove
+        html.css("script, style").remove
+        exclude!(html)
+      end
+
+      html
     end
 
     def images
@@ -106,8 +114,7 @@ module Readability
     def get_images(content=nil, reload=false)
       @best_candidate_has_image = false if reload
 
-      prepare_candidates
-      content       = @best_candidate[:elem] unless reload
+      content       = @best_candidate.node unless reload
 
       return [] if content.nil?
 
@@ -162,42 +169,22 @@ module Readability
       @author ||= Author.parse(@html)
     end
 
-    def content(remove_unlikely_candidates = :default)
-      @remove_unlikely_candidates = false if remove_unlikely_candidates == false
+    def content
+      article = get_article(@candidates, @best_candidate) 
 
-      prepare_candidates
-      article = get_article(@candidates, @best_candidate)
-
-      cleaned_article = sanitize(article, @candidates, options)
-      if article.text.strip.length < options[:retry_length]
-        if @remove_unlikely_candidates
-          @remove_unlikely_candidates = false
-        elsif @weight_classes
-          @weight_classes = false
-        elsif @clean_conditionally
-          @clean_conditionally = false
-        else
-          # nothing we can do
-          return cleaned_article
-        end
-
-        make_html
-        content
-      else
-        cleaned_article
-      end
+      sanitize(article, @candidates, options)
     end
 
     def get_article(candidates, best_candidate)
       # Now that we have the top candidate, look through its siblings for content that might also be related.
       # Things like preambles, content split by ads that we removed, etc.
 
-      sibling_score_threshold = [10, best_candidate[:content_score] * 0.2].max
+      sibling_score_threshold = [10, best_candidate.score * 0.2].max
       output = Nokogiri::XML::Node.new('div', @html)
-      best_candidate[:elem].parent.children.each do |sibling|
+      best_candidate.node.parent.children.each do |sibling|
         append = false
-        append = true if sibling == best_candidate[:elem]
-        append = true if candidates[sibling] && candidates[sibling][:content_score] >= sibling_score_threshold
+        append = true if sibling == best_candidate.node
+        append = true if candidates[sibling] && candidates[sibling].score >= sibling_score_threshold
 
         if sibling.name.downcase == "p"
           link_density = get_link_density(sibling)
@@ -222,15 +209,15 @@ module Readability
     end
 
     def select_best_candidate(candidates)
-      sorted_candidates = candidates.values.sort { |a, b| b[:content_score] <=> a[:content_score] }
+      sorted_candidates = candidates.values.sort { |a, b| b.score <=> a.score }
 
       debug("Top 5 candidates:")
       sorted_candidates[0...5].each do |candidate|
-        debug("Candidate #{candidate[:elem].name}##{candidate[:elem][:id]}.#{candidate[:elem][:class]} with score #{candidate[:content_score]}")
+        debug("Candidate #{candidate.node.name}##{candidate.node.attributes[:id]}.#{candidate.node.attributes[:class]} with score #{candidate.score}")
       end
 
-      best_candidate = sorted_candidates.first || { :elem => @html.css("body").first, :content_score => 0 }
-      debug("Best candidate #{best_candidate[:elem].name}##{best_candidate[:elem][:id]}.#{best_candidate[:elem][:class]} with score #{best_candidate[:content_score]}")
+      best_candidate = sorted_candidates.first || Candidate.new(@html.css("body").first, 0)
+      debug("Best candidate #{best_candidate.node.name}##{best_candidate.node.attributes[:id]}.#{best_candidate.node.attributes[:class]} with score #{best_candidate.score}")
 
       best_candidate
     end
@@ -251,21 +238,18 @@ module Readability
         # If this paragraph is less than 25 characters, don't even count it.
         next if inner_text.length < min_text_length
 
-        candidates[parent_node] ||= score_node(parent_node)
-        candidates[grand_parent_node] ||= score_node(grand_parent_node) if grand_parent_node
-
         content_score = 1
         content_score += inner_text.split(',').length
         content_score += [(inner_text.length / 100).to_i, 3].min
 
-        candidates[parent_node][:content_score] += content_score
-        candidates[grand_parent_node][:content_score] += content_score / 2.0 if grand_parent_node
+        candidates[parent_node] = score_node(parent_node, content_score)
+        candidates[grand_parent_node] = score_node(grand_parent_node, content_score / 2.0) if grand_parent_node
       end
 
       # Scale the final candidates score based on link density. Good content should have a
       # relatively small link density (5% or less) and be mostly unaffected by this operation.
-      candidates.each do |elem, candidate|
-        candidate[:content_score] = candidate[:content_score] * (1 - get_link_density(elem))
+      candidates.values.each do |candidate|
+        candidate.score = candidate.score * (1 - get_link_density(candidate.node))
       end
 
       candidates
@@ -291,10 +275,10 @@ module Readability
       'th' => -5
     }.freeze
 
-    def score_node(elem)
-      content_score = class_weight(elem)
-      content_score += ELEMENT_SCORES.fetch(elem.name.downcase, 0)
-      { :content_score => content_score, :elem => elem }
+    def score_node(elem, content_score)
+      score = class_weight(elem) + content_score
+      score += ELEMENT_SCORES.fetch(elem.name.downcase, 0)
+      Candidate.new(elem, score)
     end
 
     def debug(str)
@@ -356,6 +340,7 @@ module Readability
       # so a<br>b will have a nice space between them
       base_replace_with_whitespace = %w[br hr h1 h2 h3 h4 h5 h6 dl dd ol li ul address blockquote center]
 
+
       # Use a hash for speed (don't want to make a million calls to include?)
       whitelist = Hash.new
       base_whitelist.each {|tag| whitelist[tag] = true }
@@ -396,7 +381,7 @@ module Readability
       return unless @clean_conditionally
       node.css(selector).each do |el|
         weight = class_weight(el)
-        content_score = candidates[el] ? candidates[el][:content_score] : 0
+        content_score = candidates[el] ? candidates[el].score : 0
         name = el.name.downcase
         
         if weight + content_score < 0
@@ -432,12 +417,12 @@ module Readability
         "too short a content length without a single image"
       elsif weight < 25 && link_density > 0.2
         "too many links for its weight (#{weight})"
-      elsif weight >= 25 && link_density > 0.5
+      elsif weight >= 25 && link_density > 0.75
         "too many links for its weight (#{weight})"
       elsif (counts["embed"] == 1 && content_length < 75) || counts["embed"] > 1
         "<embed>s with too short a content length, or too many <embed>s"
       else
-        nil
+        false
       end
     end
 

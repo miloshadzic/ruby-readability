@@ -76,6 +76,17 @@ describe Readability do
     HTML
   end
 
+  specify '#exclude!' do
+    @boing_boing = File.read(File.dirname(__FILE__) + "/fixtures/boing_boing.html")
+    @doc = Readability::Document.new(@boing_boing,
+                                     :tags => %w[div p img a],
+                                     :attributes => %w[src href],
+                                     :remove_empty_nodes => false,
+                                     :do_not_guess_encoding => true,
+                                    blacklist: "#sidebar_adblock")
+    expect(@doc.content).to_not match(/ADVERTISE/)
+  end
+
   describe "images" do
 
     it "should show one image, but outside of the best candidate" do
@@ -273,15 +284,17 @@ describe Readability do
     end
 
     it "should like <div>s more than <th>s" do
-      expect(@doc.score_node(@elem1)[:content_score]).to be > @doc.score_node(@elem2)[:content_score]
+      expect(@doc.score_node(@elem1, 0).score)
+        .to be > @doc.score_node(@elem2, 0).score
     end
 
     it "should like classes like text more than classes like comment" do
       @elem2.name = "div"
-      expect(@doc.score_node(@elem1)[:content_score]).to eq(@doc.score_node(@elem2)[:content_score])
+      expect(@doc.score_node(@elem1, 0).score)
+        .to eq(@doc.score_node(@elem2, 0).score)
       @elem1['class'] = "text"
       @elem2['class'] = "comment"
-      expect(@doc.score_node(@elem1)[:content_score]).to be > @doc.score_node(@elem2)[:content_score]
+      expect(@doc.score_node(@elem1, 0).score).to be > @doc.score_node(@elem2, 0).score
     end
   end
 
@@ -333,8 +346,8 @@ describe Readability do
 
     it "should prefer the body in this particular example" do
       expect(@candidates.values.sort { |a, b|
-        b[:content_score] <=> a[:content_score]
-      }.first[:elem][:id]).to eq("body")
+        b.score <=> a.score
+      }.first.node.attributes['id'].value).to eq("body")
     end
 
     context "when two consequent br tags are used instead of p" do
@@ -359,7 +372,7 @@ describe Readability do
           </html>
         HTML
         @candidates = @doc.score_paragraphs(0)
-        expect(@candidates.values.sort_by { |a| -a[:content_score] }.first[:elem][:id]).to eq('post1')
+        expect(@candidates.values.sort_by { |a| -a.score }.first.node.attributes['id'].value).to eq('post1')
       end
     end
   end
@@ -434,7 +447,7 @@ describe Readability do
         doc = Readability::Document.new(html).content
 
         load "fixtures/samples/#{sample}-fragments.rb"
-        #puts "testing #{sample}..."
+        # puts "testing #{sample}..."
 
         $required_fragments.each do |required_text|
           expect(doc).to include(required_text)
@@ -477,18 +490,18 @@ describe Readability do
 
   describe "#make_html" do
     it "should strip the html comments tag" do
-      doc = Readability::Document.new("<html><head><meta http-equiv='content-type' content='text/html; charset=LATIN1'></head><body><div>hi!<!-- bye~ --></div></body></html>")
+      doc = Readability::Document.new("<html><head><meta http-equiv='content-type' content='text/html; charset=LATIN1'></head><body><div>Simple plain text message<!-- bye~ --></div></body></html>")
       content = doc.content
-      expect(content).to include("hi!")
+      expect(content).to include("Simple plain text message")
       expect(content).not_to include("bye")
     end
 
     it "should not error with empty content" do
-      expect(Readability::Document.new('').content).to eq('<div><div></div></div>')
+      expect(Readability::Document.new('').content).to eq('<div></div>')
     end
 
     it "should not error with a document with no <body>" do
-      expect(Readability::Document.new('<html><head><meta http-equiv="refresh" content="0;URL=http://example.com"></head></html>').content).to eq('<div><div></div></div>')
+      expect(Readability::Document.new('<html><head><meta http-equiv="refresh" content="0;URL=http://example.com"></head></html>').content).to eq('<div></div>')
     end
   end
 
@@ -541,19 +554,20 @@ describe Readability do
 
   describe "remove all tags" do
     it "should work for an incomplete piece of HTML" do
-      doc = Readability::Document.new('<div>test</div', :tags => [])
-      expect(doc.content).to eq('test')
+      doc = Readability::Document.new('<div>Simple plain text message</div>', :tags => [])
+      expect(doc.content).to eq('Simple plain text message')
     end
 
     it "should work for a HTML document" do
-      doc = Readability::Document.new('<html><head><title>title!</title></head><body><div><p>test</p></div></body></html>',
+      doc = Readability::Document.new('<html><head><title>title!</title></head><body><div><p>Simple plain text message.</p></div></body></html>',
                                       :tags => [])
-      expect(doc.content).to eq('test')
+      expect(doc.content).to eq('Simple plain text message.')
     end
 
     it "should work for a plain text" do
-      doc = Readability::Document.new('test', :tags => [])
-      expect(doc.content).to eq('test')
+      doc = Readability::Document.new('Test this basic plain text sentence.',
+                                      tags: [])
+      expect(doc.content).to eq('Test this basic plain text sentence.')
     end
   end
 
@@ -563,15 +577,10 @@ describe Readability do
     }
 
     it "contains incorrect data by default" do
-      # NOTE: in an ideal world this spec starts failing
-      #  and readability correctly detects content for the
-      #  boing boing sample.
-
       doc = Readability::Document.new(boing_boing)
 
       content = doc.content
-      expect(content !~ /Bees and Bombs/).to eq(true)
-      expect(content).to match(/ADVERTISE/)
+      expect(content).to match(/Bees and Bombs/)
     end
 
     it "should apply whitelist" do
@@ -585,7 +594,7 @@ describe Readability do
     it "should apply blacklist" do
       doc = Readability::Document.new(boing_boing, blacklist: "#sidebar_adblock")
       content = doc.content
-      expect(content !~ /ADVERTISE/).to eq(true)
+      expect(content).to_not match(/ADVERTISE/)
 
     end
   end
