@@ -1,4 +1,3 @@
-require 'rubygems'
 require 'readability'
 require 'rr'
 require 'fakeweb'

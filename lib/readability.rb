@@ -317,21 +317,9 @@ module Readability
 
     def sanitize(article, options = {})
       node = article.content
-
-      node.css("h1, h2, h3, h4, h5, h6").each do |header|
-        header.remove if class_weight(header) < 0 || get_link_density(header) > 0.33
-      end
-
-      node.css("form, object, iframe, embed").each do |elem|
-        elem.remove
-      end
-
-      if @options[:remove_empty_nodes]
-        # remove <p> tags that have no text content - this will also remove p tags that contain only images.
-        node.css("p").each do |elem|
-          elem.remove if elem.content.strip.empty?
-        end
-      end
+      node = Cleaners::RemoveHeaders.new.call(node)
+      node = Cleaners::DeleteSelector.new("form, object, iframe, embed").call(node)
+      node = Cleaners::EmptyParagraph.new.call(node) if @options[:remove_empty_nodes]
 
       # Conditionally clean <table>s, <ul>s, and <div>s
       clean_conditionally(node, "table, ul, div")
