@@ -9,6 +9,9 @@ require_relative 'readability/article'
 require_relative 'readability/errors'
 require_relative 'readability/image'
 require_relative 'readability/candidate'
+require_relative 'readability/cleaners/delete_selector'
+require_relative 'readability/cleaners/remove_headers'
+require_relative 'readability/cleaners/empty_paragraph'
 require_relative 'readability/cleaners/conditional'
 
 module Readability
