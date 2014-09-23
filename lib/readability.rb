@@ -16,6 +16,7 @@ module Readability
       :retry_length               => 250,
       :min_text_length            => 25,
       :remove_unlikely_candidates => true,
+      :guess_encoding             => true,
       :weight_classes             => true,
       :clean_conditionally        => true,
       :remove_empty_nodes         => true,
@@ -44,38 +45,36 @@ module Readability
 
     def initialize(input, options = {})
       @options = DEFAULT_OPTIONS.merge(options)
-      @input = input
 
-      if RUBY_VERSION =~ /^(1\.9|2)/ && !@options[:encoding]
-        @input = GuessHtmlEncoding.encode(@input, @options[:html_headers]) unless @options[:do_not_guess_encoding]
-        @options[:encoding] = @input.encoding.to_s
+
+      if @options[:encoding].nil?
+        if @options.fetch(:guess_encoding)
+          input = GuessHtmlEncoding.encode(input, @options[:html_headers])
+        end
+
+        @options[:encoding] = input.encoding.to_s
       end
 
-      @input = @input.gsub(REGEXES[:replaceBrsRe], '</p><p>').gsub(REGEXES[:replaceFontsRe], '<\1span>')
-      @remove_unlikely_candidates = @options[:remove_unlikely_candidates]
+      input = input.gsub(REGEXES[:replaceBrsRe], '</p><p>').gsub(REGEXES[:replaceFontsRe], '<\1span>')
       @weight_classes = @options[:weight_classes]
       @clean_conditionally = @options[:clean_conditionally]
       @best_candidate_has_image = true
 
-      @whitelist = options.fetch(:whitelist, nil)
-      @blacklist = options.fetch(:blacklist, nil)
+      @html = exclude(make_html(input),
+                      @options.fetch(:whitelist),
+                      @options.fetch(:blacklist))
 
-      @html = make_html
-
-
-      remove_unlikely_candidates! if @remove_unlikely_candidates
+      remove_unlikely_candidates! if @options.fetch(:remove_unlikely_candidates)
       transform_misused_divs_into_paragraphs!
 
-      @candidates     = score_paragraphs(@options[:min_text_length])
+      @candidates     = score_paragraphs(@options.fetch(:min_text_length))
       @best_candidate = select_best_candidate
     end
 
-    def exclude!(html)
-      return unless @blacklist || @whitelist
+    def exclude(html, whitelist, blacklist)
+      return html unless @blacklist || @whitelist
 
-      if @blacklist
-        html.css(@blacklist).remove
-      end
+      html.css(@blacklist).remove if @blacklist
 
       if @whitelist
         elems = html.css(@whitelist).to_s
@@ -85,12 +84,11 @@ module Readability
         end
       end
 
-      @input = html.to_s
       html
     end
 
-    def make_html
-      html = Nokogiri::HTML(@input, nil, @options[:encoding])
+    def make_html(source)
+      html = Nokogiri::HTML(source, nil, @options[:encoding])
 
       # In case document has no body, such as from empty string or redirect
       if html.css('body').empty?
@@ -98,7 +96,6 @@ module Readability
       else
         html.xpath('//comment()').remove
         html.css("script, style").remove
-        exclude!(html)
       end
 
       html
