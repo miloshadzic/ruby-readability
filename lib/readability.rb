@@ -9,6 +9,7 @@ require_relative 'readability/article'
 require_relative 'readability/errors'
 require_relative 'readability/image'
 require_relative 'readability/candidate'
+require_relative 'readability/cleaners/conditional'
 
 module Readability
   class Document
@@ -322,7 +323,7 @@ module Readability
       node = Cleaners::EmptyParagraph.new.call(node) if @options[:remove_empty_nodes]
 
       # Conditionally clean <table>s, <ul>s, and <div>s
-      clean_conditionally(node, "table, ul, div")
+      node = Cleaners::Conditional.new("table, ul, div", @candidates, @options).call(node) if @clean_conditionally
 
       # We'll sanitize all elements using a whitelist
       base_whitelist = @options.fetch(:tags, %w[div p])
@@ -364,56 +365,5 @@ module Readability
       # Get rid of duplicate whitespace
       return html.gsub(/[\r\n\f]+/, "\n" )
     end
-
-    def clean_conditionally(node, selector)
-      return unless @clean_conditionally
-      node.css(selector).each do |el|
-        weight = class_weight(el)
-
-        content_score = @candidates[el] ? @candidates[el].score : 0
-        name = el.name.downcase
-
-        if weight + content_score < 0
-          el.remove
-          debug("Conditionally cleaned #{name}##{el[:id]}.#{el[:class]} with weight #{weight} and content score #{content_score} because score + content score was less than zero.")
-        elsif el.text.count(",") < 10
-          counts = %w[p img li a embed input].inject({}) { |m, kind| m[kind] = el.css(kind).length; m }
-          counts["li"] -= 100
-
-          # For every img under a noscript tag discount one from the count to avoid double counting
-          counts["img"] -= el.css("noscript").css("img").length
-
-          content_length = el.text.strip.length  # Count the text length excluding any surrounding whitespace
-          link_density = get_link_density(el)
-
-          reason = clean_conditionally_reason?(name, counts, content_length, options, weight, link_density)
-          if reason
-            debug("Conditionally cleaned #{name}##{el[:id]}.#{el[:class]} with weight #{weight} and content score #{content_score} because it has #{reason}.")
-            el.remove
-          end
-        end
-      end
-    end
-
-    def clean_conditionally_reason?(name, counts, content_length, options, weight, link_density)
-      if (counts["img"] > counts["p"]) && (counts["img"] > 1)
-        "too many images"
-      elsif counts["li"] > counts["p"] && name != "ul" && name != "ol"
-        "more <li>s than <p>s"
-      elsif counts["input"] > (counts["p"] / 3).to_i
-        "less than 3x <p>s than <input>s"
-      elsif (content_length < options[:min_text_length]) && (counts["img"] != 1)
-        "too short a content length without a single image"
-      elsif weight < 25 && link_density > 0.2
-        "too many links for its weight (#{weight})"
-      elsif weight >= 25 && link_density > 0.75
-        "too many links for its weight (#{weight})"
-      elsif (counts["embed"] == 1 && content_length < 75) || counts["embed"] > 1
-        "<embed>s with too short a content length, or too many <embed>s"
-      else
-        false
-      end
-    end
-
   end
 end
