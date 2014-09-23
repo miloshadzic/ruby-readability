@@ -213,16 +213,7 @@ module Readability
 
     def select_best_candidate
       sorted_candidates = @candidates.values.sort { |a, b| b.score <=> a.score }
-
-      debug("Top 5 candidates:")
-      sorted_candidates[0...5].each do |candidate|
-        debug("Candidate #{candidate.node.name}##{candidate.node.attributes[:id]}.#{candidate.node.attributes[:class]} with score #{candidate.score}")
-      end
-
-      best_candidate = sorted_candidates.first || Candidate.new(@html.css("body").first, 0)
-      debug("Best candidate #{best_candidate.node.name}##{best_candidate.node.attributes[:id]}.#{best_candidate.node.attributes[:class]} with score #{best_candidate.score}")
-
-      best_candidate
+      sorted_candidates.first || Candidate.new(@html.css("body").first, 0)
     end
 
     def get_link_density(elem)
@@ -284,15 +275,10 @@ module Readability
       Candidate.new(elem, score)
     end
 
-    def debug(str)
-      puts str if options[:debug]
-    end
-
     def remove_unlikely_candidates!
       @html.css("*").each do |elem|
         str = "#{elem[:class]}#{elem[:id]}"
         if str =~ REGEXES[:unlikelyCandidatesRe] && str !~ REGEXES[:okMaybeItsACandidateRe] && (elem.name.downcase != 'html') && (elem.name.downcase != 'body')
-          debug("Removing unlikely candidate - #{str}")
           elem.remove
         end
       end
@@ -304,14 +290,12 @@ module Readability
 
           # transform <div>s that do not contain other block elements into <p>s
           if elem.inner_html !~ REGEXES[:divToPElementsRe]
-            debug("Altering div(##{elem[:id]}.#{elem[:class]}) to p");
             elem.name = "p"
           end
         else
           # wrap text nodes in p tags
 #          elem.children.each do |child|
 #            if child.text?
-#              debug("wrapping text node with a p")
 #              child.swap("<p>#{child.text}</p>")
 #            end
 #          end
