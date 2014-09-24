@@ -8,7 +8,6 @@ require_relative 'readability/author'
 require_relative 'readability/article'
 require_relative 'readability/errors'
 require_relative 'readability/image'
-require_relative 'readability/candidate'
 require_relative 'readability/cleaners/delete_selector'
 require_relative 'readability/cleaners/remove_headers'
 require_relative 'readability/cleaners/empty_paragraph'
@@ -112,7 +111,7 @@ module Readability
     def get_images(content=nil, reload=false)
       @best_candidate_has_image = false if reload
 
-      content       = @best_candidate.node unless reload
+      content       = @best_candidate[:elem] unless reload
 
       return [] if content.nil?
 
@@ -180,12 +179,12 @@ module Readability
     #
     # @returns [Article]
     def get_article(best_candidate)
-      sibling_score_threshold = [10, best_candidate.score * 0.2].max
+      sibling_score_threshold = [10, best_candidate[:score] * 0.2].max
       output = Nokogiri::XML::Node.new('div', @html)
-      best_candidate.node.parent.children.each do |sibling|
+      best_candidate[:elem].parent.children.each do |sibling|
         append = false
-        append = true if sibling == best_candidate.node
-        append = true if @candidates[sibling] && @candidates[sibling].score >= sibling_score_threshold
+        append = true if sibling == best_candidate[:elem]
+        append = true if @candidates[sibling] && @candidates[sibling][:score] >= sibling_score_threshold
 
         if sibling.name.downcase == "p"
           link_density = get_link_density(sibling)
@@ -212,8 +211,8 @@ module Readability
     end
 
     def select_best_candidate
-      sorted_candidates = @candidates.values.sort { |a, b| b.score <=> a.score }
-      sorted_candidates.first || Candidate.new(@html.css("body").first, 0)
+      sorted_candidates = @candidates.values.sort { |a, b| b[:score] <=> a[:score] }
+      sorted_candidates.first || {elem: @html.css("body").first, score: 0}
     end
 
     def get_link_density(elem)
@@ -221,6 +220,7 @@ module Readability
       text_length = elem.text.length
       link_length / text_length.to_f
     end
+
 
     def score_paragraphs(min_text_length)
       candidates = {}
@@ -232,21 +232,30 @@ module Readability
         # If this paragraph is less than 25 characters, don't even count it.
         next if inner_text.length < min_text_length
 
+        candidates[parent_node] ||= score_node(parent_node)
+        candidates[grand_parent_node] ||= score_node(grand_parent_node) if grand_parent_node
+
         content_score = 1
         content_score += inner_text.split(',').length
         content_score += [(inner_text.length / 100).to_i, 3].min
 
-        candidates[parent_node] = score_node(parent_node, content_score)
-        candidates[grand_parent_node] = score_node(grand_parent_node, content_score / 2.0) if grand_parent_node
+        candidates[parent_node][:score] += content_score
+        candidates[grand_parent_node][:score] += content_score / 2.0 if grand_parent_node
       end
 
       # Scale the final candidates score based on link density. Good content should have a
       # relatively small link density (5% or less) and be mostly unaffected by this operation.
-      candidates.values.each do |candidate|
-        candidate.score = candidate.score * (1 - get_link_density(candidate.node))
+      candidates.each do |elem, candidate|
+        candidate[:score] = candidate[:score] * (1 - get_link_density(elem))
       end
 
       candidates
+    end
+
+    def score_node(elem)
+      content_score = class_weight(elem)
+      content_score += ELEMENT_SCORES.fetch(elem.name.downcase, 0)
+      { :score => content_score, :elem => elem }
     end
 
     def class_weight(e)
@@ -268,12 +277,6 @@ module Readability
       'form' => -3,
       'th' => -5
     }.freeze
-
-    def score_node(elem, content_score)
-      score = class_weight(elem) + content_score
-      score += ELEMENT_SCORES.fetch(elem.name.downcase, 0)
-      Candidate.new(elem, score)
-    end
 
     def remove_unlikely_candidates!
       @html.css("*").each do |elem|

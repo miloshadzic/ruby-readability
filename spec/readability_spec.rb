@@ -303,17 +303,17 @@ describe Readability do
     end
 
     it "should like <div>s more than <th>s" do
-      expect(@doc.score_node(@elem1, 0).score)
-        .to be > @doc.score_node(@elem2, 0).score
+      expect(@doc.score_node(@elem1)[:score])
+        .to be > @doc.score_node(@elem2)[:score]
     end
 
     it "should like classes like text more than classes like comment" do
       @elem2.name = "div"
-      expect(@doc.score_node(@elem1, 0).score)
-        .to eq(@doc.score_node(@elem2, 0).score)
+      expect(@doc.score_node(@elem1)[:score])
+        .to eq(@doc.score_node(@elem2)[:score])
       @elem1['class'] = "text"
       @elem2['class'] = "comment"
-      expect(@doc.score_node(@elem1, 0).score).to be > @doc.score_node(@elem2, 0).score
+      expect(@doc.score_node(@elem1)[:score]).to be > @doc.score_node(@elem2)[:score]
     end
   end
 
@@ -365,8 +365,8 @@ describe Readability do
 
     it "should prefer the body in this particular example" do
       expect(@candidates.values.sort { |a, b|
-        b.score <=> a.score
-      }.first.node.attributes['id'].value).to eq("body")
+        b[:score] <=> a[:score]
+      }.first[:elem].attributes['id'].value).to eq("body")
     end
 
     context "when two consequent br tags are used instead of p" do
@@ -391,7 +391,7 @@ describe Readability do
           </html>
         HTML
         @candidates = @doc.score_paragraphs(0)
-        expect(@candidates.values.sort_by { |a| -a.score }.first.node.attributes['id'].value).to eq('post1')
+        expect(@candidates.values.sort_by { |a| -a[:score] }.first[:elem].attributes['id'].value).to eq('post1')
       end
     end
   end
@@ -470,25 +470,20 @@ describe Readability do
     end
 
     it "should output expected fragments of text" do
-      checks = 0
       @samples.each do |sample|
         html = File.read(File.dirname(__FILE__) + "/fixtures/samples/#{sample}.html")
         doc = Readability::Document.new(html).content
 
         load "fixtures/samples/#{sample}-fragments.rb"
-        # puts "testing #{sample}..."
 
         $required_fragments.each do |required_text|
           expect(doc).to include(required_text)
-          checks += 1
         end
 
         $excluded_fragments.each do |text_to_avoid|
           expect(doc).not_to include(text_to_avoid)
-          checks += 1
         end
       end
-      #puts "Performed #{checks} checks."
     end
   end
 
